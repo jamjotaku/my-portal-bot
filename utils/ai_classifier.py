@@ -2,6 +2,7 @@ import google.generativeai as genai
 from config import settings
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -11,32 +12,10 @@ if settings.GEMINI_API_KEY:
 else:
     logger.warning("GEMINI_API_KEY is not set.")
 
-# JSONスキーマの定義 (Structured Outputs用)
-# Gemini 1.5 Pro/Flashで利用可能なresponse_schemaを活用
-classification_schema = {
-    "type": "OBJECT",
-    "properties": {
-        "category": {
-            "type": "STRING",
-            "description": "分類先のチャンネル名（例: todo-タスク, dairy-log, gourmet-memo, hobby-clips, cosplay-archive のいずれか）"
-        },
-        "tags": {
-            "type": "ARRAY",
-            "items": {"type": "STRING"},
-            "description": "フォーラム用のタグ、または該当なしの場合は空配列"
-        },
-        "reason": {
-            "type": "STRING",
-            "description": "分類した理由の簡潔な説明"
-        }
-    },
-    "required": ["category", "tags", "reason"]
-}
-
 async def classify_content(text: str, title: str = "", description: str = "") -> dict:
     """テキストやURLの情報を元にGemini APIで分類を行う"""
     try:
-        model = genai.GenerativeModel("gemini-1.5-pro") # より安定しているProモデルを使用
+        model = genai.GenerativeModel("gemini-pro") # より互換性の高い 1.0 Proモデルを使用
         
         prompt = f"""
 以下の内容を分析し、適切なDiscordのチャンネルに分類してください。
@@ -53,24 +32,32 @@ async def classify_content(text: str, title: str = "", description: str = "") ->
 URLのタイトル: {title}
 URLの概要: {description}
 
-JSONフォーマットで回答してください。
+必ず以下のJSONフォーマットのみで回答してください。マークダウンのコードブロック(```json など)は付けずに、直接JSON文字列だけを出力してください。
+{{
+  "category": "分類先のチャンネル名",
+  "tags": ["フォーラム用のタグ文字列の配列", "該当なしの場合は空配列"],
+  "reason": "分類した理由の簡潔な説明"
+}}
 """
         response = await model.generate_content_async(
             prompt,
             generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=classification_schema,
                 temperature=0.1
             )
         )
         
         # 結果をJSONとしてパース
-        result = json.loads(response.text)
+        text_resp = response.text.strip()
+        # 万が一コードブロックが含まれていた場合は除去
+        text_resp = re.sub(r'^```[a-zA-Z]*\n', '', text_resp)
+        text_resp = re.sub(r'\n```$', '', text_resp)
+        
+        result = json.loads(text_resp)
         return result
 
     except Exception as e:
         logger.error(f"Gemini API Error: {e}")
-        # フォールバック: エラー時はデフォルトとして日常に返すかNone
+        # フォールバック: エラー時はデフォルトとして日常に返す
         return {
             "category": "dairy-log",
             "tags": [],
