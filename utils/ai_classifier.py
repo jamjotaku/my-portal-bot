@@ -1,0 +1,78 @@
+import google.generativeai as genai
+from config import settings
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+# APIキーの設定
+if settings.GEMINI_API_KEY:
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+else:
+    logger.warning("GEMINI_API_KEY is not set.")
+
+# JSONスキーマの定義 (Structured Outputs用)
+# Gemini 1.5 Pro/Flashで利用可能なresponse_schemaを活用
+classification_schema = {
+    "type": "OBJECT",
+    "properties": {
+        "category": {
+            "type": "STRING",
+            "description": "分類先のチャンネル名（例: todo-タスク, dairy-log, gourmet-memo, hobby-clips, cosplay-archive のいずれか）"
+        },
+        "tags": {
+            "type": "ARRAY",
+            "items": {"type": "STRING"},
+            "description": "フォーラム用のタグ、または該当なしの場合は空配列"
+        },
+        "reason": {
+            "type": "STRING",
+            "description": "分類した理由の簡潔な説明"
+        }
+    },
+    "required": ["category", "tags", "reason"]
+}
+
+async def classify_content(text: str, title: str = "", description: str = "") -> dict:
+    """テキストやURLの情報を元にGemini APIで分類を行う"""
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash") # コスト/速度のバランスでFlashを使用
+        
+        prompt = f"""
+以下の内容を分析し、適切なDiscordのチャンネルに分類してください。
+
+【分類先のチャンネル候補】
+- todo-タスク (直近のTODO管理)
+- dairy-log (日記・日々の記録)
+- gourmet-memo (飲食店ログ・開拓メモ。フォーラム形式)
+- hobby-clips (エンタメ・推し活全般)
+- cosplay-archive (コスプレイヤー情報・図鑑化。フォーラム形式)
+
+【入力情報】
+本文テキスト: {text}
+URLのタイトル: {title}
+URLの概要: {description}
+
+JSONフォーマットで回答してください。
+"""
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=classification_schema,
+                temperature=0.1
+            )
+        )
+        
+        # 結果をJSONとしてパース
+        result = json.loads(response.text)
+        return result
+
+    except Exception as e:
+        logger.error(f"Gemini API Error: {e}")
+        # フォールバック: エラー時はデフォルトとして日常に返すかNone
+        return {
+            "category": "dairy-log",
+            "tags": [],
+            "reason": f"API Error fallback: {e}"
+        }
