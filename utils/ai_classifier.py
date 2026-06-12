@@ -36,7 +36,7 @@ classification_schema = {
 async def classify_content(text: str, title: str = "", description: str = "") -> dict:
     """テキストやURLの情報を元にGemini APIで分類を行う"""
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash-latest") # コスト/速度のバランスでFlashを使用
+        model = genai.GenerativeModel("gemini-1.5-pro") # より安定しているProモデルを使用
         
         prompt = f"""
 以下の内容を分析し、適切なDiscordのチャンネルに分類してください。

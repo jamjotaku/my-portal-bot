@@ -16,7 +16,15 @@ class Database:
     def _authenticate(self):
         if not self.client:
             try:
-                creds = ServiceAccountCredentials.from_json_keyfile_name(self.credentials_path, self.scope)
+                import os
+                import json
+                creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+                if creds_json:
+                    creds_dict = json.loads(creds_json)
+                    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, self.scope)
+                else:
+                    creds = ServiceAccountCredentials.from_json_keyfile_name(self.credentials_path, self.scope)
+                
                 self.client = gspread.authorize(creds)
                 self.sheet = self.client.open_by_key(settings.GOOGLE_SHEET_KEY)
                 logger.info("Successfully connected to Google Sheets.")
