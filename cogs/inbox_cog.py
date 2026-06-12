@@ -89,11 +89,23 @@ class InboxCog(commands.Cog):
             if not thread_name:
                 thread_name = "New Item"
 
-            await target_channel.create_thread(
-                name=thread_name,
-                content=message.content,
-                applied_tags=applied_tags[:5] # Discordの制限で最大5つ
-            )
+            # 既存の同一名スレッド（アクティブなもの）を探す
+            existing_thread = None
+            for thread in target_channel.threads:
+                if thread.name == thread_name:
+                    existing_thread = thread
+                    break
+
+            if existing_thread:
+                # 既存のスレッドへ追記
+                await existing_thread.send(content=message.content)
+            else:
+                # 新規スレッドを作成
+                await target_channel.create_thread(
+                    name=thread_name,
+                    content=message.content,
+                    applied_tags=applied_tags[:5] # Discordの制限で最大5つ
+                )
         else:
             # 通常のテキストチャンネルの場合
             await target_channel.send(content=message.content)
