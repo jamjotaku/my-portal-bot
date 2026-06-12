@@ -72,17 +72,6 @@ class InboxCog(commands.Cog):
             logger.warning(f"Target channel {category_name} not found. Fallback to Dairy Log.")
             target_channel = self.bot.get_channel(settings.DAIRY_LOG_ID)
 
-        # メッセージ内容の構築
-        embed = discord.Embed(
-            title=title if title else "Inbox転送メモ",
-            url=target_url if target_url else None,
-            description=message.content,
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
-        )
-        embed.add_field(name="分類理由", value=reason, inline=False)
-        embed.set_footer(text=f"Tags: {', '.join(tags)}" if tags else "No tags")
-
         # 転送処理
         if isinstance(target_channel, discord.ForumChannel):
             # フォーラムチャンネルの場合、タグの検索とスレッド作成
@@ -100,16 +89,29 @@ class InboxCog(commands.Cog):
             if not thread_name:
                 thread_name = "New Item"
 
-            # 既存スレッドがあるか簡易チェック(フォーラムの最新スレッドから)
-            # ※完全な既存スレッド追記はより複雑なため、ここでは新規スレッド作成をベースとします
             await target_channel.create_thread(
                 name=thread_name,
-                embed=embed,
+                content=message.content,
                 applied_tags=applied_tags[:5] # Discordの制限で最大5つ
             )
         else:
             # 通常のテキストチャンネルの場合
-            await target_channel.send(embed=embed)
+            await target_channel.send(content=message.content)
+
+        # Webhookチャンネルへ分類理由のログを送信
+        webhook_channel = self.bot.get_channel(settings.WEBHOOKS_ID)
+        if webhook_channel:
+            log_embed = discord.Embed(
+                title=f"分類ログ: {title if title else '転送メモ'}",
+                url=target_url if target_url else None,
+                color=discord.Color.green(),
+                timestamp=datetime.now()
+            )
+            log_embed.add_field(name="元のメッセージ", value=message.content[:1024], inline=False)
+            log_embed.add_field(name="分類先", value=f"<#{target_channel.id}>", inline=False)
+            log_embed.add_field(name="分類理由", value=reason, inline=False)
+            log_embed.set_footer(text=f"Tags: {', '.join(tags)}" if tags else "No tags")
+            await webhook_channel.send(embed=log_embed)
 
         # 元のメッセージにリアクション
         await message.add_reaction("✅")

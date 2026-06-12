@@ -7,7 +7,22 @@ logger = logging.getLogger(__name__)
 async def fetch_page_info(url: str):
     """URLから非同期でページのタイトルとDescriptionを取得する"""
     try:
+        # X(Twitter)のリンクの場合はvxtwitterのAPIを使用してメタデータを取得する
+        import re
+        twitter_match = re.search(r'(?:https?://)?(?:www\.)?(?:twitter\.com|x\.com)(/[^/]+/status/\d+)', url)
+        
         async with aiohttp.ClientSession() as session:
+            if twitter_match:
+                api_url = f"https://api.vxtwitter.com{twitter_match.group(1)}"
+                async with session.get(api_url, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        user_name = data.get("user_name", "Unknown")
+                        text = data.get("text", "")
+                        return {"title": f"X(Twitter) - {user_name}", "description": text}
+                    else:
+                        logger.warning(f"vxtwitter API failed for {url}, fallback to normal scraping")
+
             # ユーザーエージェントを設定してブロックを回避しやすくする
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
