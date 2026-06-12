@@ -17,12 +17,32 @@ class InboxCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Bot自身のメッセージは無視
-        if message.author.bot:
-            return
-
         # 監視対象チャンネルかチェック
         if message.channel.id not in [settings.INBOX_DAILY_ID, settings.INBOX_TECH_ID]:
+            return
+
+        # Webhookからのメッセージの場合、#webhooksチャンネルへ転送する
+        if message.webhook_id:
+            webhook_channel = self.bot.get_channel(settings.WEBHOOKS_ID)
+            if webhook_channel:
+                if message.embeds:
+                    await webhook_channel.send(content=message.content, embeds=message.embeds)
+                else:
+                    embed = discord.Embed(
+                        title="Webhook Notification",
+                        description=message.content,
+                        color=discord.Color.purple(),
+                        timestamp=datetime.now()
+                    )
+                    await webhook_channel.send(embed=embed)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+            return
+
+        # Bot自身のメッセージは無視 (Webhook以外のBot)
+        if message.author.bot:
             return
 
         logger.info(f"Received message in Inbox: {message.content}")
