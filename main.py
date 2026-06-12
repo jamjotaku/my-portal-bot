@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 # FastAPIのセットアップ (常時起動用)
 app = FastAPI()
 
+@app.get("/")
+@app.head("/")
 @app.get("/health")
+@app.head("/health")
 async def health_check():
     return {"status": "ok"}
 
