@@ -1,79 +1,114 @@
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from config import settings
+import os
 import asyncio
 import logging
+from config import settings
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
-        self.scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        self.credentials_path = 'credentials.json'
-        self.client = None
-        self.sheet = None
+        self.supabase_url = settings.SUPABASE_URL
+        self.supabase_key = settings.SUPABASE_KEY
+        self.client: Client = None
+        self.app_user_id = None
+        self._authenticate()
 
     def _authenticate(self):
-        if not self.client:
+        if not self.supabase_url or not self.supabase_key:
+            logger.error("Supabase credentials not found in settings.")
+            return
+
+        try:
+            self.client = create_client(self.supabase_url, self.supabase_key)
+            logger.info("Successfully connected to Supabase.")
+            
             try:
-                import os
-                import json
-                creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
-                if creds_json:
-                    creds_dict = json.loads(creds_json)
-                    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, self.scope)
-                else:
-                    creds = ServiceAccountCredentials.from_json_keyfile_name(self.credentials_path, self.scope)
+                users_response = self.client.auth.admin.list_users()
+                if users_response and len(users_response) > 0:
+                    self.app_user_id = users_response[0].id
+                    logger.info(f"Supabase bound to user: {self.app_user_id}")
+            except Exception as e:
+                logger.warning(f"Could not list admin users: {e}")
                 
-                self.client = gspread.authorize(creds)
-                self.sheet = self.client.open_by_key(settings.GOOGLE_SHEET_KEY)
-                logger.info("Successfully connected to Google Sheets.")
-            except Exception as e:
-                logger.error(f"Failed to connect to Google Sheets: {e}")
+        except Exception as e:
+            logger.error(f"Failed to connect to Supabase: {e}")
 
-    async def add_archive_log(self, date_str, title, url, category):
-        """archive_logs ワークシートにデータを追加する"""
+    async def add_memo(self, content, tags):
+        if not self.client or not self.app_user_id:
+            return
+        
         def _add():
-            self._authenticate()
-            if self.sheet:
-                try:
-                    worksheet = self.sheet.worksheet("archive_logs")
-                    worksheet.append_row([date_str, title, url, category])
-                except Exception as e:
-                    logger.error(f"Error appending to archive_logs: {e}")
-        await asyncio.to_thread(_add)
-
-    async def add_work_log(self, date_str, join_time, leave_time, duration_minutes):
-        """work_logs ワークシートにデータを追加する"""
-        def _add():
-            self._authenticate()
-            if self.sheet:
-                try:
-                    worksheet = self.sheet.worksheet("work_logs")
-                    worksheet.append_row([date_str, join_time, leave_time, duration_minutes])
-                except Exception as e:
-                    logger.error(f"Error appending to work_logs: {e}")
-        await asyncio.to_thread(_add)
-
-    async def search_archive_logs(self, keyword):
-        """archive_logs ワークシートからキーワードで部分一致検索を行う"""
-        def _search():
-            self._authenticate()
-            if not self.sheet:
-                return []
             try:
-                worksheet = self.sheet.worksheet("archive_logs")
-                records = worksheet.get_all_records()
-                results = []
-                for record in records:
-                    title = str(record.get('タイトル', ''))
-                    category = str(record.get('分類カテゴリ', ''))
-                    if keyword.lower() in title.lower() or keyword.lower() in category.lower():
-                        results.append(record)
-                return results[:10] # 最大10件
+                data = {
+                    "user_id": self.app_user_id,
+                    "content": content,
+                    "tags": tags
+                }
+                self.client.table('memos').insert(data).execute()
             except Exception as e:
-                logger.error(f"Error searching archive_logs: {e}")
+                logger.error(f"Error adding memo: {e}")
+        await asyncio.to_thread(_add)
+
+    async def add_bookmark(self, original_url, content, title, description, image_url, tags):
+        if not self.client or not self.app_user_id:
+            return
+            
+        def _add():
+            try:
+                data = {
+                    "user_id": self.app_user_id,
+                    "original_url": original_url,
+                    "content": content,
+                    "title": title,
+                    "description": description,
+                    "image_url": image_url,
+                    "tags": tags
+                }
+                self.client.table('bookmarks').insert(data).execute()
+            except Exception as e:
+                logger.error(f"Error adding bookmark: {e}")
+        await asyncio.to_thread(_add)
+        
+    async def update_discord_status(self, status, activity, vc_channel_name):
+        if not self.client or not self.app_user_id:
+            return
+            
+        def _update():
+            try:
+                data = {
+                    "user_id": self.app_user_id,
+                    "status": status,
+                    "activity": activity,
+                    "vc_channel_name": vc_channel_name
+                }
+                self.client.table('discord_status').upsert(data).execute()
+            except Exception as e:
+                logger.error(f"Error updating discord status: {e}")
+        await asyncio.to_thread(_update)
+
+    async def get_recent_memos(self, limit=5):
+        if not self.client or not self.app_user_id:
+            return []
+        def _get():
+            try:
+                response = self.client.table('memos').select('*').eq('user_id', self.app_user_id).order('created_at', desc=True).limit(limit).execute()
+                return response.data
+            except Exception as e:
+                logger.error(f"Error fetching memos: {e}")
                 return []
-        return await asyncio.to_thread(_search)
+        return await asyncio.to_thread(_get)
+
+    async def get_recent_bookmarks(self, limit=5):
+        if not self.client or not self.app_user_id:
+            return []
+        def _get():
+            try:
+                response = self.client.table('bookmarks').select('*').eq('user_id', self.app_user_id).order('created_at', desc=True).limit(limit).execute()
+                return response.data
+            except Exception as e:
+                logger.error(f"Error fetching bookmarks: {e}")
+                return []
+        return await asyncio.to_thread(_get)
 
 db = Database()

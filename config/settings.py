@@ -19,6 +19,10 @@ SPOTIFY_REFRESH_TOKEN = os.getenv("SPOTIFY_REFRESH_TOKEN")
 # Google Spreadsheet
 GOOGLE_SHEET_KEY = os.getenv("GOOGLE_SHEET_KEY")
 
+# Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 # FastAPI Port
 PORT = int(os.getenv("PORT", 10000))
 

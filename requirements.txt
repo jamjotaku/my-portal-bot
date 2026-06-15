@@ -9,3 +9,4 @@ playwright
 fastapi
 uvicorn
 python-dateutil
+supabase

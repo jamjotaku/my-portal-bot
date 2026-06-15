@@ -24,6 +24,7 @@ async def health_check():
 # Discord Botのセットアップ
 intents = discord.Intents.default()
 intents.guilds = True
+intents.members = True
 intents.messages = True
 intents.message_content = True
 intents.voice_states = True
@@ -48,7 +49,8 @@ async def load_cogs():
         "cogs.voice_cog",
         "cogs.search_cog",
         "cogs.music_cog",
-        "cogs.youtube_cog"
+        "cogs.youtube_cog",
+        "cogs.portal_cog"
     ]
     for cog in cogs:
         try:

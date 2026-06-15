@@ -128,9 +128,21 @@ class InboxCog(commands.Cog):
         # 元のメッセージにリアクション
         await message.add_reaction("✅")
 
-        # スプレッドシートへ記録
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        await db.add_archive_log(date_str, title if title else message.content[:20], target_url, category_name)
+        # Supabaseへ記録
+        if target_url:
+            await db.add_bookmark(
+                original_url=target_url,
+                content=message.content,
+                title=title,
+                description=description,
+                image_url="", # 画像URLは現状空
+                tags=tags
+            )
+        else:
+            await db.add_memo(
+                content=message.content,
+                tags=tags
+            )
 
 async def setup(bot):
     await bot.add_cog(InboxCog(bot))
