@@ -25,9 +25,12 @@ class Database:
             
             try:
                 users_response = self.client.auth.admin.list_users()
-                if users_response and len(users_response) > 0:
-                    self.app_user_id = users_response[0].id
+                users = getattr(users_response, 'users', users_response)
+                if users and len(users) > 0:
+                    self.app_user_id = users[0].id
                     logger.info(f"Supabase bound to user: {self.app_user_id}")
+                else:
+                    logger.error("No users found in Supabase Auth.")
             except Exception as e:
                 logger.warning(f"Could not list admin users: {e}")
                 
