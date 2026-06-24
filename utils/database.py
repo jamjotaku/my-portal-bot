@@ -114,4 +114,19 @@ class Database:
                 return []
         return await asyncio.to_thread(_get)
 
+    async def add_mental_log(self, level: int):
+        if not self.client or not self.app_user_id:
+            return
+            
+        def _add():
+            try:
+                data = {
+                    "user_id": self.app_user_id,
+                    "level": level
+                }
+                self.client.table('mental_logs').insert(data).execute()
+            except Exception as e:
+                logger.error(f"Error adding mental log: {e}")
+        await asyncio.to_thread(_add)
+
 db = Database()

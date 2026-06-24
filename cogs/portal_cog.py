@@ -8,13 +8,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class MentalLogView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for i in range(1, 6):
+            btn = discord.ui.Button(label=str(i), style=discord.ButtonStyle.primary, custom_id=f"mental_log_{i}")
+            btn.callback = self.make_callback(i)
+            self.add_item(btn)
+            
+    def make_callback(self, level):
+        async def callback(interaction: discord.Interaction):
+            await db.add_mental_log(level)
+            await interaction.response.send_message(f"メンタルスコア【{level}】を記録しました！お疲れ様です。", ephemeral=True)
+        return callback
+
 class PortalCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.bot.add_view(MentalLogView())
         self.daily_reminder.start()
+        self.weekly_digest.start()
 
     def cog_unload(self):
         self.daily_reminder.cancel()
+        self.weekly_digest.cancel()
 
     tz_jst = datetime.timezone(datetime.timedelta(hours=9))
     time_2200 = datetime.time(hour=22, minute=0, tzinfo=tz_jst)
@@ -24,9 +41,63 @@ class PortalCog(commands.Cog):
         try:
             channel = self.bot.get_channel(settings.DAIRY_LOG_ID)
             if channel:
-                await channel.send('🌙 夜の22時です！今日の振り返りやメンタルスコアはつけましたか？\nWebポータルまたはコマンドから記録しましょう！')
+                view = MentalLogView()
+                await channel.send('🌙 夜の22時です！今日のメンタルスコアを記録しましょう！', view=view)
         except Exception as e:
             logger.error(f"Error in daily_reminder: {e}")
+
+    @tasks.loop(time=time_2200)
+    async def weekly_digest(self):
+        # 日曜日の場合のみ実行 (0 = 月曜, 6 = 日曜)
+        if datetime.datetime.now(self.tz_jst).weekday() != 6:
+            return
+            
+        try:
+            channel = self.bot.get_channel(settings.DAIRY_LOG_ID)
+            if not channel:
+                return
+                
+            # 過去7日間のデータを取得
+            memos = await db.get_recent_memos(limit=50)
+            bookmarks = await db.get_recent_bookmarks(limit=20)
+            
+            # Geminiに渡すプロンプト作成
+            import google.generativeai as genai
+            if not settings.GEMINI_API_KEY:
+                return
+                
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel("gemini-flash-latest")
+            
+            memo_texts = "\n".join([f"- {m.get('content', '')}" for m in memos[:20]])
+            bm_texts = "\n".join([f"- {b.get('title', '')}: {b.get('original_url', '')}" for b in bookmarks[:10]])
+            
+            prompt = f"""
+以下の今週の「メモ」と「ブックマーク」を元に、今週1週間の振り返りレポートを作成してください。
+文体は親しみやすく、労うようなトーンでお願いします。
+
+【今週のメモ】
+{memo_texts}
+
+【今週のブックマーク】
+{bm_texts}
+
+出力形式:
+1. 今週のハイライト（要約）
+2. 気になったトピック
+3. 来週へ向けたひとこと
+"""
+            response = await model.generate_content_async(prompt)
+            
+            embed = discord.Embed(title="📊 今週のAI振り返りレポート", description=response.text[:4000], color=discord.Color.purple())
+            await channel.send(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Error in weekly_digest: {e}")
+
+    @weekly_digest.before_loop
+    async def before_weekly_digest(self):
+        await self.bot.wait_until_ready()
 
     @daily_reminder.before_loop
     async def before_daily_reminder(self):

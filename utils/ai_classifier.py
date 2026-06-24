@@ -73,3 +73,25 @@ JSONフォーマットで回答してください。
             "tags": [],
             "reason": f"API Error fallback: {e}"
         }
+
+async def transcribe_audio(file_path: str) -> str:
+    """音声ファイルをGeminiに渡して文字起こしを行う"""
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # ファイルをアップロード (ローカルパスを指定)
+        audio_file = genai.upload_file(path=file_path)
+        
+        prompt = "この音声メッセージの文字起こしをしてください。自然な日本語の文章に整えてください。"
+        response = await model.generate_content_async([prompt, audio_file])
+        
+        # 不要になったファイルを削除
+        try:
+            genai.delete_file(audio_file.name)
+        except Exception:
+            pass
+            
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"Gemini Audio Transcription Error: {e}")
+        return ""

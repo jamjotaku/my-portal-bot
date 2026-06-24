@@ -47,8 +47,37 @@ class InboxCog(commands.Cog):
 
         logger.info(f"Received message in Inbox: {message.content}")
 
+        # 音声メッセージ（ボイスメッセージ）の処理
+        transcription = ""
+        for attachment in message.attachments:
+            if attachment.filename.endswith(".ogg") or "audio" in getattr(attachment, 'content_type', ""):
+                try:
+                    import tempfile
+                    import os
+                    from utils.ai_classifier import transcribe_audio
+                    
+                    # 一時ファイルに保存
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as tmp:
+                        await attachment.save(tmp.name)
+                        tmp_path = tmp.name
+                    
+                    # 文字起こし
+                    transcription = await transcribe_audio(tmp_path)
+                    os.remove(tmp_path)
+                    
+                    if transcription:
+                        await message.reply(f"🎤 **文字起こし:**\n{transcription}")
+                except Exception as e:
+                    logger.error(f"Voice processing error: {e}")
+
+        # 本文または文字起こし結果を対象にする
+        target_text = message.content or transcription
+
+        if not target_text and not message.attachments:
+            return
+
         # URLの抽出
-        urls = self.url_pattern.findall(message.content)
+        urls = self.url_pattern.findall(target_text)
         title = ""
         description = ""
         target_url = urls[0] if urls else ""
@@ -60,7 +89,7 @@ class InboxCog(commands.Cog):
             description = page_info.get("description", "")
 
         # AIで分類
-        classification = await classify_content(message.content, title, description)
+        classification = await classify_content(target_text, title, description)
         category_name = classification.get("category", "dairy-log")
         tags = classification.get("tags", [])
         reason = classification.get("reason", "")
@@ -85,7 +114,7 @@ class InboxCog(commands.Cog):
                         applied_tags.append(available_tag)
                         break
             
-            thread_name = title[:90] if title else message.content[:90]
+            thread_name = title[:90] if title else target_text[:90]
             if not thread_name:
                 thread_name = "New Item"
 
@@ -98,17 +127,17 @@ class InboxCog(commands.Cog):
 
             if existing_thread:
                 # 既存のスレッドへ追記
-                await existing_thread.send(content=message.content)
+                await existing_thread.send(content=target_text)
             else:
                 # 新規スレッドを作成
                 await target_channel.create_thread(
                     name=thread_name,
-                    content=message.content,
+                    content=target_text,
                     applied_tags=applied_tags[:5] # Discordの制限で最大5つ
                 )
         else:
             # 通常のテキストチャンネルの場合
-            await target_channel.send(content=message.content)
+            await target_channel.send(content=target_text)
 
         # Webhookチャンネルへ分類理由のログを送信
         webhook_channel = self.bot.get_channel(settings.WEBHOOKS_ID)
@@ -119,7 +148,7 @@ class InboxCog(commands.Cog):
                 color=discord.Color.green(),
                 timestamp=datetime.now()
             )
-            log_embed.add_field(name="元のメッセージ", value=message.content[:1024], inline=False)
+            log_embed.add_field(name="元のメッセージ", value=target_text[:1024], inline=False)
             log_embed.add_field(name="分類先", value=f"<#{target_channel.id}>", inline=False)
             log_embed.add_field(name="分類理由", value=reason, inline=False)
             log_embed.set_footer(text=f"Tags: {', '.join(tags)}" if tags else "No tags")
@@ -132,7 +161,7 @@ class InboxCog(commands.Cog):
         if target_url:
             await db.add_bookmark(
                 original_url=target_url,
-                content=message.content,
+                content=target_text,
                 title=title,
                 description=description,
                 image_url="", # 画像URLは現状空
@@ -140,7 +169,7 @@ class InboxCog(commands.Cog):
             )
         else:
             await db.add_memo(
-                content=message.content,
+                content=target_text,
                 tags=tags
             )
 
