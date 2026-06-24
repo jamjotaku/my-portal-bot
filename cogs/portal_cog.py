@@ -76,22 +76,35 @@ class PortalCog(commands.Cog):
         if after.bot:
             return
         
-        activity_name = after.activity.name if after.activity else ""
-        status_name = str(after.status)
+        before_activity = before.activity.name if before.activity else ""
+        after_activity = after.activity.name if after.activity else ""
+        before_status = str(before.status)
+        after_status = str(after.status)
+        
+        # ステータスかアクティビティに変更がない場合はスキップ
+        if before_activity == after_activity and before_status == after_status:
+            return
+            
         vc_name = after.voice.channel.name if after.voice and after.voice.channel else ""
         
-        await db.update_discord_status(status=status_name, activity=activity_name, vc_channel_name=vc_name)
+        await db.update_discord_status(status=after_status, activity=after_activity, vc_channel_name=vc_name)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.bot:
             return
             
+        before_vc = before.channel.name if before.channel else ""
+        after_vc = after.channel.name if after.channel else ""
+        
+        # VCチャンネルに変更がない場合はスキップ
+        if before_vc == after_vc:
+            return
+            
         activity_name = member.activity.name if member.activity else ""
         status_name = str(member.status)
-        vc_name = after.channel.name if after.channel else ""
         
-        await db.update_discord_status(status=status_name, activity=activity_name, vc_channel_name=vc_name)
+        await db.update_discord_status(status=status_name, activity=activity_name, vc_channel_name=after_vc)
 
 async def setup(bot):
     await bot.add_cog(PortalCog(bot))
