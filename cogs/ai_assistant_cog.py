@@ -45,7 +45,8 @@ class AIAssistantCog(commands.Cog):
                     # コンテキストの構築
                     context_text = "【最近のあなたのメモ】\n"
                     for memo in recent_memos:
-                        context_text += f"- {memo.get('created_at')} : {memo.get('content')} (タグ: {', '.join(memo.get('tags', []))})\n"
+                        tags = memo.get('tags') or []
+                        context_text += f"- {memo.get('created_at')} : {memo.get('content')} (タグ: {', '.join(tags)})\n"
                     
                     context_text += "\n【最近のあなたのブックマーク】\n"
                     for bm in recent_bookmarks:
