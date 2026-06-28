@@ -50,7 +50,8 @@ async def load_cogs():
         "cogs.search_cog",
         "cogs.music_cog",
         "cogs.youtube_cog",
-        "cogs.portal_cog"
+        "cogs.portal_cog",
+        "cogs.ai_assistant_cog"
     ]
     for cog in cogs:
         try:
